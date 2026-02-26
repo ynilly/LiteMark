@@ -44,6 +44,17 @@ docker run -d -p 8080:80 \
 
 访问地址：`http://localhost:8080`，后台入口：`http://localhost:8080/admin`
 
+## 更新
+
+```bash
+# 停止并删除旧容器
+docker-compose down
+# 拉取最新镜像
+docker-compose pull
+# 启动新容器
+docker-compose up -d
+```
+
 ### docker-compose.yml 示例
 
 ```yaml
