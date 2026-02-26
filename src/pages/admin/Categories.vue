@@ -34,6 +34,16 @@
         <span class="category-label">{{ categoryLabelFromKey(key) }}</span>
         <div class="category-actions">
           <el-button
+            v-if="key"
+            link
+            type="primary"
+            size="small"
+            :disabled="categoryOrderSaving"
+            @click="openEditCategory(key)"
+          >
+            编辑
+          </el-button>
+          <el-button
             v-if="key && !hasBookmarks(key)"
             link
             type="danger"
@@ -67,6 +77,37 @@
       show-icon
       style="margin-top: 16px;"
     />
+
+    <!-- 编辑分类对话框 -->
+    <el-dialog
+      v-model="showEditDialog"
+      title="编辑分类"
+      :width="isMobile ? '90%' : '400px'"
+      @close="closeEditDialog"
+    >
+      <el-form label-width="80px">
+        <el-form-item label="分类名称" required>
+          <el-input
+            v-model="editCategoryName"
+            placeholder="请输入新的分类名称"
+            :disabled="editingSaving"
+            @keyup.enter="submitEditCategory"
+          />
+        </el-form-item>
+      </el-form>
+      <el-alert
+        v-if="editingError"
+        :title="editingError"
+        type="error"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 16px;"
+      />
+      <template #footer>
+        <el-button @click="closeEditDialog" :disabled="editingSaving">取消</el-button>
+        <el-button type="primary" @click="submitEditCategory" :loading="editingSaving">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -108,11 +149,24 @@ const categoryOrderSaving = ref(false);
 const categoryOrderMessage = ref('');
 const categoryOrderError = ref('');
 
+// 编辑分类
+const showEditDialog = ref(false);
+const editingCategory = ref('');
+const editCategoryName = ref('');
+const editingSaving = ref(false);
+const editingError = ref('');
+
 const categoryListRef = ref<HTMLElement | null>(null);
 let sortableInstance: Sortable | null = null;
 
 const storedToken = typeof window !== 'undefined' ? window.localStorage.getItem('bookmark_token') : null;
 const authToken = ref<string | null>(storedToken);
+
+// 移动端检测
+const isMobile = ref(false);
+function checkMobile() {
+  isMobile.value = window.innerWidth <= 768;
+}
 
 async function requestWithAuth(input: RequestInfo | URL, init: RequestInit = {}) {
   if (!authToken.value) {
@@ -170,9 +224,22 @@ async function loadBookmarks() {
     }
     const data = (await response.json()) as Bookmark[];
     bookmarks.value = data;
-    syncCategoryOrderFromBookmarks(data);
   } catch (err) {
     console.error('加载书签失败:', err);
+  }
+}
+
+async function loadCategories() {
+  try {
+    const response = await requestWithAuth(`${bookmarksEndpoint}/categories`, { method: 'GET' });
+    if (!response.ok) {
+      throw new Error(`加载分类失败：${response.status}`);
+    }
+    const data = (await response.json()) as { categories: string[] };
+    categoryOrder.value = data.categories;
+    categoryOrderDraft.value = [...data.categories];
+  } catch (err) {
+    console.error('加载分类失败:', err);
   }
 }
 
@@ -237,17 +304,74 @@ async function addCategory() {
       const message = await response.text();
       throw new Error(message || '添加分类失败');
     }
-    // 添加到本地列表
-    categoryOrderDraft.value.push(name);
-    categoryOrder.value.push(name);
+    // 重新加载分类列表
+    await loadCategories();
     newCategoryName.value = '';
     ElMessage.success('分类已添加');
     // 重新初始化拖拽
+    await nextTick();
     initSortable();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '添加分类失败');
   } finally {
     addingCategory.value = false;
+  }
+}
+
+// 打开编辑分类对话框
+function openEditCategory(category: string) {
+  editingCategory.value = category;
+  editCategoryName.value = category;
+  editingError.value = '';
+  showEditDialog.value = true;
+}
+
+// 关闭编辑对话框
+function closeEditDialog() {
+  if (editingSaving.value) return;
+  showEditDialog.value = false;
+}
+
+// 提交编辑分类
+async function submitEditCategory() {
+  const newName = editCategoryName.value.trim();
+  if (!newName) {
+    editingError.value = '分类名称不能为空';
+    return;
+  }
+  if (newName === editingCategory.value) {
+    editingError.value = '分类名称未改变';
+    return;
+  }
+  if (categoryOrderDraft.value.includes(newName)) {
+    editingError.value = '分类名称已存在';
+    return;
+  }
+  editingSaving.value = true;
+  editingError.value = '';
+  try {
+    const response = await requestWithAuth(
+      `${apiBase}/api/bookmarks/categories/${encodeURIComponent(editingCategory.value)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ new_name: newName })
+      }
+    );
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || '更新分类失败');
+    }
+    // 重新加载分类和书签
+    await Promise.all([loadCategories(), loadBookmarks()]);
+    showEditDialog.value = false;
+    ElMessage.success('分类已更新');
+    // 重新初始化拖拽
+    await nextTick();
+    initSortable();
+  } catch (error) {
+    editingError.value = error instanceof Error ? error.message : '更新分类失败';
+  } finally {
+    editingSaving.value = false;
   }
 }
 
@@ -265,10 +389,12 @@ async function removeCategory(category: string) {
       const message = await response.text();
       throw new Error(message || '删除分类失败');
     }
-    // 从本地列表移除
-    categoryOrderDraft.value = categoryOrderDraft.value.filter(k => k !== category);
-    categoryOrder.value = categoryOrder.value.filter(k => k !== category);
+    // 重新加载分类列表
+    await loadCategories();
     ElMessage.success('分类已删除');
+    // 重新初始化拖拽
+    await nextTick();
+    initSortable();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '删除分类失败');
   }
@@ -307,13 +433,16 @@ function initSortable() {
 
 onMounted(() => {
   if (authToken.value) {
-    loadBookmarks().then(() => {
+    Promise.all([loadBookmarks(), loadCategories()]).then(() => {
       initSortable();
     });
   }
+  checkMobile();
+  window.addEventListener('resize', checkMobile);
 });
 
 onUnmounted(() => {
+  window.removeEventListener('resize', checkMobile);
   if (sortableInstance) {
     sortableInstance.destroy();
     sortableInstance = null;

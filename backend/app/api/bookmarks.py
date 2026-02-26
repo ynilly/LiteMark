@@ -26,6 +26,7 @@ from app.services.bookmark import (
     get_category_order,
     import_bookmarks,
     create_category,
+    update_category,
     delete_category,
 )
 from app.utils.security import get_current_user, get_optional_user
@@ -165,6 +166,29 @@ async def create_category_endpoint(
         )
     cat_order = await create_category(session, category_name)
     return {"success": True, "category": cat_order.category, "order": cat_order.order}
+
+
+@router.put("/categories/{category_name}")
+async def update_category_endpoint(
+    category_name: str,
+    data: dict,
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """更新分类名称"""
+    new_name = data.get("new_name", "").strip()
+    if not new_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="新分类名称不能为空"
+        )
+    success = await update_category(session, category_name, new_name)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="分类不存在或新名称已被使用"
+        )
+    return {"success": True, "category": new_name}
 
 
 @router.delete("/categories/{category_name}")

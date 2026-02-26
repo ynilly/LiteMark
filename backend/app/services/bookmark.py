@@ -142,11 +142,9 @@ async def reorder_bookmarks(
 
 
 async def get_categories(session: AsyncSession) -> List[str]:
-    """获取所有分类"""
+    """获取所有分类（从 CategoryOrder 表中获取）"""
     result = await session.execute(
-        select(Bookmark.category)
-        .where(Bookmark.category.isnot(None))
-        .distinct()
+        select(CategoryOrder.category).order_by(CategoryOrder.order)
     )
     return [r[0] for r in result.all() if r[0]]
 
@@ -211,6 +209,37 @@ async def create_category(session: AsyncSession, category: str) -> CategoryOrder
     await session.commit()
     await session.refresh(cat_order)
     return cat_order
+
+
+async def update_category(session: AsyncSession, old_name: str, new_name: str) -> bool:
+    """更新分类名称（同时更新 CategoryOrder 和所有书签）"""
+    # 检查新名称是否已存在
+    result = await session.execute(
+        select(CategoryOrder).where(CategoryOrder.category == new_name)
+    )
+    if result.scalar_one_or_none():
+        return False  # 新名称已存在
+
+    # 更新 CategoryOrder 表
+    result = await session.execute(
+        select(CategoryOrder).where(CategoryOrder.category == old_name)
+    )
+    cat_order = result.scalar_one_or_none()
+    if not cat_order:
+        return False  # 旧分类不存在
+
+    cat_order.category = new_name
+
+    # 更新所有使用该分类的书签
+    result = await session.execute(
+        select(Bookmark).where(Bookmark.category == old_name)
+    )
+    bookmarks = result.scalars().all()
+    for bookmark in bookmarks:
+        bookmark.category = new_name
+
+    await session.commit()
+    return True
 
 
 async def delete_category(session: AsyncSession, category: str) -> bool:

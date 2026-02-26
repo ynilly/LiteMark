@@ -254,6 +254,7 @@ const apiBase = apiBaseRaw.replace(/\/$/, '');
 const bookmarksEndpoint = `${apiBase}/api/bookmarks`;
 
 const bookmarks = ref<Bookmark[]>([]);
+const categories = ref<string[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const search = ref('');
@@ -376,16 +377,8 @@ const filteredBookmarks = computed(() => {
 });
 
 const categorySuggestions = computed(() => {
-  const set = new Set<string>();
-  bookmarks.value.forEach((bookmark) => {
-    const name = normalizeCategory(bookmark);
-    if (name) {
-      set.add(name);
-    }
-  });
-  const list = Array.from(set);
-  list.sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
-  return list;
+  // 使用从 API 加载的分类列表
+  return categories.value;
 });
 
 function normalizeCategory(bookmark: Bookmark) {
@@ -432,6 +425,19 @@ async function loadBookmarks() {
     error.value = err instanceof Error ? err.message : '未知错误';
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadCategories() {
+  try {
+    const response = await requestWithAuth(`${bookmarksEndpoint}/categories`, { method: 'GET' });
+    if (!response.ok) {
+      throw new Error(`加载分类失败：${response.status}`);
+    }
+    const data = (await response.json()) as { categories: string[] };
+    categories.value = data.categories;
+  } catch (err) {
+    console.error('加载分类失败:', err);
   }
 }
 
@@ -492,7 +498,7 @@ async function submitEditor() {
       const message = await response.text();
       throw new Error(message || '保存失败');
     }
-    await loadBookmarks();
+    await Promise.all([loadBookmarks(), loadCategories()]);
     showEditor.value = false;
     ElMessage.success('保存成功');
   } catch (err) {
@@ -636,7 +642,7 @@ async function aiSummarize() {
 
 onMounted(() => {
   if (isAuthenticated.value) {
-    loadBookmarks().then(() => {
+    Promise.all([loadBookmarks(), loadCategories()]).then(() => {
       initSortable();
     });
   }
