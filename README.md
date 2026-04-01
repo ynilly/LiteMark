@@ -44,6 +44,15 @@ docker run -d -p 8080:80 \
 
 访问地址：`http://localhost:8080`，后台入口：`http://localhost:8080/admin`
 
+## 更新
+
+```bash
+# 拉取最新镜像
+docker-compose pull
+# 启动新容器
+docker-compose up -d
+```
+
 ### docker-compose.yml 示例
 
 ```yaml
@@ -126,6 +135,32 @@ LiteMark 支持将数据定时备份到 WebDAV 服务器，确保数据安全。
 - 文件格式：JSON
 - 包含内容：所有书签数据、分类顺序
 - 文件名格式：`litemark-backup-YYYY-MM-DD-HH-MM-SS.json`
+
+---
+
+## 导入/导出书签
+
+LiteMark 已支持“批量导入/导出”功能，兼容 JSON/CSV/HTML 三种格式。
+
+### 导出
+
+在后台管理 -> 数据备份，选择导出格式：
+
+- JSON：完整备份（书签 + 分类顺序）
+- CSV：行式书签导出，包含 id/title/url/category/description/tags/visible/order 等字段
+- HTML：Netscape Bookmark 标准格式，方便导入浏览器书签
+
+点击“导出数据”后可获得对应文件（`litemark-bookmarks-YYYY-MM-DD.{json|csv|html}`）。
+
+### 导入
+
+在后台管理 -> 数据备份，选择“导入备份”文件：支持`.json`、`.csv`、`.html`。
+
+- JSON 文件可直接使用 LiteMark 备份导出文件，并可包含 `bookmarks` + `category_order` 数据。
+- CSV 文件应包含 `title,url` 字段，建议携带 `category,description,tags,visible,order`。
+- HTML 文件会提取 `<A HREF="...">` 书签项。
+
+`覆盖现有数据` 选项开启后，将先清空现有书签与分类再导入。
 
 ---
 
