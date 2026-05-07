@@ -17,7 +17,8 @@ WORKDIR /app
 COPY package.json package-lock.json* yarn.lock* ./
 
 # 安装依赖
-RUN if [ -f yarn.lock ]; then yarn install --frozen-lockfile; \
+RUN set -x && \
+    if [ -f yarn.lock ]; then yarn install --frozen-lockfile; \
     elif [ -f package-lock.json ]; then npm ci; \
     else npm install; fi
 

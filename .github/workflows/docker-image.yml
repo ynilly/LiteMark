@@ -29,22 +29,24 @@ jobs:
       id: vars
       run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
+    - name: Debug Frontend Build
+      run: |
+        docker build --progress=plain --target frontend-builder -t frontend-debug .
+
     - name: Build and Push
       uses: docker/build-push-action@v5
       with:
         context: .
         push: true
         platforms: linux/amd64,linux/arm64
-
+        build-args: |
+          BUILDKIT_PROGRESS=plain
         tags: |
           topqaz/litemark:latest
           topqaz/litemark:${{ steps.vars.outputs.VERSION }}
-
-
           topqaz/litemark:amd64
           topqaz/litemark:arm64
           topqaz/litemark:amd64-${{ steps.vars.outputs.VERSION }}
           topqaz/litemark:arm64-${{ steps.vars.outputs.VERSION }}
-
         cache-from: type=registry,ref=topqaz/litemark:cache
         cache-to: type=registry,ref=topqaz/litemark:cache,mode=max
