@@ -96,7 +96,12 @@ volumes:
 <p align="center">
   <img src="project_img/mcp1.jpg" alt="mcp截图演示1" width="800" />
 </p>
-
+<p align="center">
+  <img src="project_img/mcp2.jpg" alt="mcp截图演示2" width="800" />
+</p>
+<p align="center">
+  <img src="project_img/mcp3.jpg" alt="mcp截图演示3" width="800" />
+</p>
 ### 登录页面
 
 <p align="center">
