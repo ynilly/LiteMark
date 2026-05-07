@@ -96,7 +96,7 @@
         :closable="false"
         show-icon
       >
-        <p>MCP 用于让支持 Streamable HTTP 的 AI 客户端直接管理 LiteMark 书签。启用后，客户端通过 MCP 地址和 Token 连接，不需要暴露管理员账号密码。</p>
+        <p>MCP 用于让支持 Streamable HTTP 的 AI 客户端直接管理 LiteMark 书签。启用后，客户端可通过 Bearer Token 直连，也可通过 OAuth 2.0 Client Credentials 获取短期 access token。</p>
         <p>桌面客户端、命令行 Agent、服务器 Agent 通常不会携带浏览器 Origin，“允许来源”留空即可；只有网页端 AI 客户端从浏览器直接访问时，才需要填写对应网站来源。</p>
       </el-alert>
       <el-form :model="mcpForm" :label-width="isMobile ? '0px' : '120px'" @submit.prevent="saveMcpSettings">
@@ -149,6 +149,40 @@
             <div class="setting-tip">Token 相当于 MCP 专用访问密钥。重新生成后，旧客户端配置会失效。</div>
           </div>
         </el-form-item>
+        <el-form-item :label="isMobile ? '' : 'OAuth 2.0'">
+          <template v-if="isMobile" #label>
+            <span class="mobile-label">OAuth 2.0</span>
+          </template>
+          <div class="oauth-grid">
+            <div>
+              <span class="oauth-label">Token URL</span>
+              <el-input :model-value="oauthTokenEndpoint" readonly>
+                <template #append>
+                  <el-button @click="copyText(oauthTokenEndpoint)">复制</el-button>
+                </template>
+              </el-input>
+            </div>
+            <div>
+              <span class="oauth-label">Client ID</span>
+              <el-input :model-value="oauthClientId" readonly>
+                <template #append>
+                  <el-button @click="copyText(oauthClientId)">复制</el-button>
+                </template>
+              </el-input>
+            </div>
+            <div class="oauth-grid-wide">
+              <span class="oauth-label">Protected Resource Metadata</span>
+              <el-input :model-value="oauthMetadataEndpoint" readonly>
+                <template #append>
+                  <el-button @click="copyText(oauthMetadataEndpoint)">复制</el-button>
+                </template>
+              </el-input>
+            </div>
+            <div class="setting-tip oauth-grid-wide">
+              OAuth 2.0 使用 Client Credentials：Client ID 固定为 litemark-mcp，Client Secret 使用上方 MCP Token。
+            </div>
+          </div>
+        </el-form-item>
         <el-form-item :label="isMobile ? '' : '允许来源'">
           <template v-if="isMobile" #label>
             <span class="mobile-label">允许来源</span>
@@ -169,7 +203,16 @@
           </template>
           <div class="field-stack">
             <el-input :model-value="mcpClientConfig" type="textarea" :rows="8" readonly />
-            <div class="setting-tip">保存设置后，将这段配置复制到支持远程 MCP 的 AI 客户端。</div>
+            <div class="setting-tip">保存设置后，将这段配置复制到支持远程 MCP 且允许自定义 Header 的 AI 客户端。</div>
+          </div>
+        </el-form-item>
+        <el-form-item :label="isMobile ? '' : 'OAuth 配置'">
+          <template v-if="isMobile" #label>
+            <span class="mobile-label">OAuth 配置</span>
+          </template>
+          <div class="field-stack">
+            <el-input :model-value="mcpOAuthConfig" type="textarea" :rows="10" readonly />
+            <div class="setting-tip">如果客户端支持 OAuth 2.0 Client Credentials，使用这段配置；Client Secret 即上方 MCP Token。</div>
           </div>
         </el-form-item>
         <el-form-item class="form-submit-item">
@@ -188,6 +231,13 @@
             class="copy-config-button"
           >
             复制配置
+          </el-button>
+          <el-button
+            :disabled="!mcpOAuthConfig"
+            @click="copyText(mcpOAuthConfig)"
+            class="copy-config-button"
+          >
+            复制 OAuth 配置
           </el-button>
         </el-form-item>
       </el-form>
@@ -261,13 +311,35 @@ const isAuthenticated = ref(Boolean(storedToken));
 
 const mcpEndpoint = computed(() => {
   if (apiBase) {
-    return `${apiBase}/mcp`;
+    return `${apiBase}/mcp/`;
   }
   if (typeof window !== 'undefined') {
-    return `${window.location.origin}/mcp`;
+    return `${window.location.origin}/mcp/`;
   }
-  return '/mcp';
+  return '/mcp/';
 });
+
+const oauthTokenEndpoint = computed(() => {
+  if (apiBase) {
+    return `${apiBase}/oauth/token`;
+  }
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/oauth/token`;
+  }
+  return '/oauth/token';
+});
+
+const oauthMetadataEndpoint = computed(() => {
+  if (apiBase) {
+    return `${apiBase}/.well-known/oauth-protected-resource`;
+  }
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/.well-known/oauth-protected-resource`;
+  }
+  return '/.well-known/oauth-protected-resource';
+});
+
+const oauthClientId = 'litemark-mcp';
 
 const mcpClientConfig = computed(() => {
   const endpoint = mcpEndpoint.value;
@@ -277,6 +349,23 @@ const mcpClientConfig = computed(() => {
         url: endpoint,
         headers: {
           Authorization: `Bearer ${mcpForm.token || 'your-mcp-token'}`
+        }
+      }
+    }
+  }, null, 2);
+});
+
+const mcpOAuthConfig = computed(() => {
+  return JSON.stringify({
+    mcpServers: {
+      litemark: {
+        url: mcpEndpoint.value,
+        oauth: {
+          grant_type: 'client_credentials',
+          token_url: oauthTokenEndpoint.value,
+          client_id: oauthClientId,
+          client_secret: mcpForm.token || 'your-mcp-token',
+          scope: 'bookmarks:read bookmarks:write'
         }
       }
     }
@@ -656,6 +745,25 @@ onUnmounted(() => {
   color: #6b7280;
 }
 
+.oauth-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+.oauth-grid-wide {
+  grid-column: 1 / -1;
+}
+
+.oauth-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4b5563;
+}
+
 .mcp-card :deep(.el-textarea__inner) {
   font-family: Consolas, Monaco, 'Courier New', monospace;
   font-size: 12px;
@@ -760,6 +868,10 @@ onUnmounted(() => {
     width: 100%;
     margin-left: 0;
     margin-top: 12px;
+  }
+
+  .oauth-grid {
+    grid-template-columns: 1fr;
   }
 
   .settings-card :deep(.el-alert) {

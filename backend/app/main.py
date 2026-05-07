@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import init_db
-from app.api import auth, bookmarks, settings as settings_api, backup, ai
+from app.api import auth, bookmarks, settings as settings_api, backup, ai, oauth
 from app.services.auth import init_admin
 from app.services.scheduler import init_scheduler, shutdown_scheduler
 from app.version import VERSION, get_version_info
@@ -83,6 +83,7 @@ app.include_router(bookmarks.router, prefix="/api/bookmarks", tags=["书签"])
 app.include_router(settings_api.router, prefix="/api/settings", tags=["设置"])
 app.include_router(backup.router, prefix="/api/backup", tags=["备份"])
 app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
+app.include_router(oauth.router, tags=["OAuth"])
 
 from app.mcp_server import create_mcp_asgi_app
 

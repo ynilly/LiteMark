@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import json
 from typing import Any, Optional
@@ -26,6 +27,7 @@ from app.services.bookmark import (
     update_bookmark,
     update_category,
 )
+from app.utils.security import decode_token
 
 
 mcp = FastMCP(
@@ -286,13 +288,18 @@ class MCPAuthMiddleware:
             return
 
         bearer = self._extract_bearer(headers.get("authorization", ""))
-        if not config["token"] or not bearer or not hmac.compare_digest(bearer, config["token"]):
+        if not self._token_allowed(bearer, config):
             await self._send_json(
                 send,
                 401,
                 {"detail": "MCP Token 无效或缺失"},
                 origin=origin,
-                extra_headers=[(b"www-authenticate", b"Bearer")],
+                extra_headers=[
+                    (
+                        b"www-authenticate",
+                        self._www_authenticate(scope, headers).encode("latin-1"),
+                    )
+                ],
             )
             return
 
@@ -331,6 +338,42 @@ class MCPAuthMiddleware:
         if scheme.lower() != "bearer" or not token:
             return None
         return token.strip()
+
+    @staticmethod
+    def _token_allowed(bearer: Optional[str], config: dict[str, str | bool]) -> bool:
+        if not bearer:
+            return False
+        static_token = str(config.get("token") or "")
+        if static_token and hmac.compare_digest(bearer, static_token):
+            return True
+
+        payload = decode_token(bearer)
+        if not payload:
+            return False
+        expected_hash = hashlib.sha256(static_token.encode("utf-8")).hexdigest()
+        return (
+            payload.get("typ") == "mcp_oauth"
+            and payload.get("sub") == "litemark-mcp"
+            and payload.get("mcp_token_hash") == expected_hash
+            and MCPAuthMiddleware._scope_allowed(str(payload.get("scope") or ""))
+        )
+
+    @staticmethod
+    def _scope_allowed(scope: str) -> bool:
+        return set(scope.split()) == {"bookmarks:read", "bookmarks:write"}
+
+    @staticmethod
+    def _external_base_url(scope: dict[str, Any], headers: dict[str, str]) -> str:
+        proto = headers.get("x-forwarded-proto") or scope.get("scheme", "http")
+        host = headers.get("host")
+        if not host:
+            server = scope.get("server") or ("localhost", 80)
+            host = f"{server[0]}:{server[1]}"
+        return f"{proto}://{host}".rstrip("/")
+
+    def _www_authenticate(self, scope: dict[str, Any], headers: dict[str, str]) -> str:
+        metadata_url = f"{self._external_base_url(scope, headers)}/.well-known/oauth-protected-resource"
+        return f'Bearer resource_metadata="{metadata_url}"'
 
     async def _send_empty(
         self,
